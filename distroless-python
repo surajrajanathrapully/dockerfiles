@@ -1,0 +1,47 @@
+FROM debian:buster-slim AS build
+RUN apt-get update && \
+    apt-get install --no-install-suggests --no-install-recommends --yes python3-venv libpq-dev gcc libpython3-dev locales && \
+    python3 -m venv /venv && \
+    /venv/bin/pip install --upgrade pip && \
+    mkdir /var/log/supervisord && \
+    touch /var/log/supervisord/supervisord.log && \
+    mkdir /var/run/supervisord/
+
+FROM build AS build-venv
+COPY app/requirements.txt .
+RUN /venv/bin/pip install --disable-pip-version-check -r ./requirements.txt && \
+    /venv/bin/pip install uwsgi && \
+    /venv/bin/pip install supervisor
+
+FROM gcr.io/distroless/python3-debian10
+USER 1001
+COPY --chown=1001:1001 --from=build-venv /venv /venv
+COPY --chown=1001:1001 supervisor-app.conf /venv/supervisord.conf
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libpq.so.5 /lib/x86_64-linux-gnu/libpq.so.5
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libgssapi_krb5.so.2 /lib/x86_64-linux-gnu/libgssapi_krb5.so.2
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libldap_r-2.4.so.2 /lib/x86_64-linux-gnu/libldap_r-2.4.so.2
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libkrb5.so.3 /lib/x86_64-linux-gnu/libkrb5.so.3
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libk5crypto.so.3 /lib/x86_64-linux-gnu/libk5crypto.so.3
+COPY --chown=1001:1001 --from=build /lib/x86_64-linux-gnu/libcom_err.so.2 /lib/x86_64-linux-gnu/libcom_err.so.2
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libkrb5support.so.0 /lib/x86_64-linux-gnu/libkrb5support.so.0
+COPY --chown=1001:1001 --from=build /lib/x86_64-linux-gnu/libkeyutils.so.1 /lib/x86_64-linux-gnu/libkeyutils.so.1
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/liblber-2.4.so.2 /lib/x86_64-linux-gnu/liblber-2.4.so.2
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libsasl2.so.2 /lib/x86_64-linux-gnu/libsasl2.so.2
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libgnutls.so.30 /lib/x86_64-linux-gnu/libgnutls.so.30
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libp11-kit.so.0 /lib/x86_64-linux-gnu/libp11-kit.so.0
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libidn2.so.0 /lib/x86_64-linux-gnu/libidn2.so.0
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libunistring.so.2 /lib/x86_64-linux-gnu/libunistring.so.2
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libtasn1.so.6 /lib/x86_64-linux-gnu/libtasn1.so.6
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libnettle.so.6 /lib/x86_64-linux-gnu/libnettle.so.6
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libhogweed.so.4 /lib/x86_64-linux-gnu/libhogweed.so.4
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libgmp.so.10 /lib/x86_64-linux-gnu/libgmp.so.10
+COPY --chown=1001:1001 --from=build /usr/lib/x86_64-linux-gnu/libpython3.7m.so.1.0 /lib/x86_64-linux-gnu/libpython3.7m.so.1.0
+COPY --chown=1001:1001 --from=build /var/log/supervisord /var/log/supervisord
+COPY --chown=1001:1001 --from=build /var/log/supervisord/supervisord.log /var/log/supervisord/supervisord.log
+COPY --chown=1001:1001 --from=build /var/run/supervisord/ /var/run/supervisord/
+COPY --chown=1001:1001 . /home/docker/code/
+COPY --chown=1001:1001 app/env_dev.example /home/docker/code/app/.env
+RUN /venv/bin/python3 /home/docker/code/app/manage.py collectstatic
+USER 1001
+EXPOSE 8080
+ENTRYPOINT ["/venv/bin/supervisord","-n"]
